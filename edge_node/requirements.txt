@@ -1,4 +1,0 @@
-scapy
-requests
-numpy
-pandas

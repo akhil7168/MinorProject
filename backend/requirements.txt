@@ -1,0 +1,41 @@
+# DeepShield Backend Dependencies
+# ================================
+
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+websockets==12.0
+
+# Settings
+pydantic-settings==2.2.1
+python-dotenv==1.0.1
+
+# Deep Learning
+tensorflow==2.16.1
+tensorflow-model-optimization==0.8.0
+
+# ML & Data
+scikit-learn==1.4.2
+imbalanced-learn==0.12.2
+pandas==2.2.2
+numpy==1.26.4
+joblib==1.4.0
+
+# Explainability
+shap==0.45.1
+
+# Network capture
+scapy==2.5.0
+
+# Database
+supabase==2.4.0
+
+# Background tasks (optional — graceful fallback)
+celery[redis]==5.3.6
+redis==5.0.3
+
+# Utilities
+tqdm==4.66.2
+httpx==0.27.0
+aiofiles==23.2.1
