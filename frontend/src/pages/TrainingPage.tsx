@@ -57,10 +57,22 @@ export default function TrainingPage() {
                     if (p.data.status === 'completed' || p.data.status === 'failed') {
                         clearInterval(poll)
                         setTraining(false)
+                        if (p.data.status === 'failed') {
+                            alert("Training failed: " + (p.data.error_message || "Unknown error"))
+                        }
                     }
-                } catch { clearInterval(poll); setTraining(false) }
+                } catch (err: any) {
+                    clearInterval(poll);
+                    setTraining(false);
+                    console.error("Progress poll error:", err)
+                }
             }, 2000)
-        } catch { setTraining(false) }
+        } catch (err: any) {
+            setTraining(false)
+            const msg = err.response?.data?.detail || err.message
+            alert("Failed to start training: " + msg)
+            console.error("Start training error:", err)
+        }
     }
 
     const downloadDataset = async (name: string) => {

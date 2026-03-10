@@ -16,8 +16,8 @@ class LiveCapture:
         self.interface = interface
         self.running = False
 
-    async def start(self, callback=None):
-        """Start live capture (requires admin/root privileges)."""
+    def start(self, callback=None):
+        """Start live capture (requires admin/root privileges) in a background thread."""
         try:
             from scapy.all import sniff, IP, TCP, UDP
         except ImportError:
@@ -25,7 +25,7 @@ class LiveCapture:
             return
 
         self.running = True
-        logger.info(f"Starting live capture on {self.interface or 'default interface'}")
+        logger.info(f"Starting live capture on {self.interface or 'default interface'} in background")
 
         def process_packet(pkt):
             if not self.running or IP not in pkt:
@@ -55,14 +55,24 @@ class LiveCapture:
             if callback:
                 callback(packet_info)
 
-        sniff(
-            iface=self.interface,
-            prn=process_packet,
-            store=False,
-            stop_filter=lambda _: not self.running,
-        )
+        def capture_thread():
+            try:
+                sniff(
+                    iface=self.interface,
+                    prn=process_packet,
+                    store=False,
+                    stop_filter=lambda _: not self.running,
+                )
+            except Exception as e:
+                logger.error(f"Live capture failed (requires elevated privileges/Npcap): {e}")
+
+        import threading
+        self.thread = threading.Thread(target=capture_thread, daemon=True)
+        self.thread.start()
 
     def stop(self):
         """Stop live capture."""
         self.running = False
+        if hasattr(self, 'thread'):
+            self.thread.join(timeout=2.0)
         logger.info("Live capture stopped")

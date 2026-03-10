@@ -271,7 +271,11 @@ def load_dataset(name: str, data_dir: Path = None) -> tuple[np.ndarray, np.ndarr
     """
     if data_dir is None:
         from config import get_settings
-        data_dir = get_settings().DATASETS_DIR / name
+        if name == "CICIDS-2017":
+            # Hardcode mapping to the local data directory since it's already downloaded
+            data_dir = get_settings().DATASETS_DIR.parent / "data" / "Dataset" / "MachineLearningCSV" / "MachineLearningCVE"
+        else:
+            data_dir = get_settings().DATASETS_DIR / name
 
     loaders = {
         "NSL-KDD": load_nsl_kdd,

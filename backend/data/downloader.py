@@ -87,12 +87,14 @@ async def download_dataset(name: str, dataset_id: str) -> Path:
             await _download_nsl_kdd(registry, data_dir, dataset_id)
         elif name == "CICIDS-2017":
             # CICIDS requires manual download — check if files exist
-            csv_files = list(data_dir.glob("*.csv"))
+            cicids_dir = settings.DATASETS_DIR.parent / "data" / "Dataset" / "MachineLearningCSV" / "MachineLearningCVE"
+            csv_files = list(cicids_dir.glob("*.csv"))
             if csv_files:
                 await crud.update_dataset_status(dataset_id, "ready", 100)
-                logger.info(f"CICIDS-2017: Found {len(csv_files)} CSV files")
+                logger.info(f"CICIDS-2017: Found {len(csv_files)} CSV files in {cicids_dir}")
+                data_dir = cicids_dir  # Override for DB entry
             else:
-                logger.warning("CICIDS-2017 requires manual download. Place CSV files in datasets/CICIDS-2017/")
+                logger.warning(f"CICIDS-2017 requires manual download. Place CSV files in {cicids_dir}")
                 await crud.update_dataset_status(dataset_id, "ready", 100)
         elif name == "UNSW-NB15":
             await _download_file(registry.get("train_url"), data_dir / "UNSW-NB15.csv", dataset_id)
