@@ -29,17 +29,10 @@ export default function TrainingPage() {
 
     useEffect(() => {
         api.get('/datasets').then(res => {
-            setDatasets(res.data.datasets || [])
-            if (res.data.datasets?.length) setSelectedDataset(res.data.datasets[0].id)
-        }).catch(() => {
-            // Demo datasets
-            setDatasets([
-                { id: '1', name: 'CICIDS-2017', display_name: 'CICIDS 2017', description: '2.8M flows, 78 features. Modern attacks.', status: 'ready', download_progress: 100, num_features: 78, num_classes: 6 },
-                { id: '2', name: 'NSL-KDD', display_name: 'NSL-KDD', description: '148K records, 41 features.', status: 'not_downloaded', download_progress: 0, num_features: 41, num_classes: 5 },
-                { id: '3', name: 'UNSW-NB15', display_name: 'UNSW-NB15', description: '2.5M records, 49 features.', status: 'not_downloaded', download_progress: 0, num_features: 49, num_classes: 10 },
-            ])
-            setSelectedDataset('1')
-        })
+            const ds = res.data.datasets || []
+            setDatasets(ds)
+            if (ds.length) setSelectedDataset(ds[0].id)
+        }).catch(() => { })
     }, [])
 
     const startTraining = async () => {

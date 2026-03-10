@@ -14,25 +14,23 @@ interface Alert {
     fingerprint: string; model_votes: any; shap_explanation: any[];
 }
 
-const DEMO_ALERTS: Alert[] = [
-    { id: '1', severity: 'critical', attack_type: 'DDoS', src_ip: '192.168.1.105', dst_ip: '10.0.0.1', confidence: 0.97, status: 'open', created_at: new Date(Date.now() - 120000).toISOString(), fingerprint: 'a1b2', model_votes: { cnn: { class: 'DoS', confidence: 0.96 }, lstm: { class: 'DoS', confidence: 0.98 } }, shap_explanation: [{ feature: 'total_packets', shap_value: 0.34 }, { feature: 'iat_mean', shap_value: 0.28 }] },
-    { id: '2', severity: 'high', attack_type: 'PortScan', src_ip: '10.0.0.42', dst_ip: '10.0.0.1', confidence: 0.91, status: 'open', created_at: new Date(Date.now() - 300000).toISOString(), fingerprint: 'c3d4', model_votes: { cnn: { class: 'Probe', confidence: 0.89 } }, shap_explanation: [] },
-    { id: '3', severity: 'medium', attack_type: 'BruteForce', src_ip: '172.16.0.88', dst_ip: '10.0.0.5', confidence: 0.87, status: 'acknowledged', created_at: new Date(Date.now() - 720000).toISOString(), fingerprint: 'e5f6', model_votes: {}, shap_explanation: [] },
-    { id: '4', severity: 'high', attack_type: 'DoS', src_ip: '192.168.2.15', dst_ip: '10.0.0.3', confidence: 0.93, status: 'open', created_at: new Date(Date.now() - 1080000).toISOString(), fingerprint: 'g7h8', model_votes: {}, shap_explanation: [] },
-    { id: '5', severity: 'low', attack_type: 'Probe', src_ip: '10.0.1.100', dst_ip: '10.0.0.2', confidence: 0.86, status: 'resolved', created_at: new Date(Date.now() - 1500000).toISOString(), fingerprint: 'i9j0', model_votes: {}, shap_explanation: [] },
-    { id: '6', severity: 'critical', attack_type: 'DDoS', src_ip: '192.168.3.200', dst_ip: '10.0.0.1', confidence: 0.99, status: 'open', created_at: new Date(Date.now() - 60000).toISOString(), fingerprint: 'k1l2', model_votes: {}, shap_explanation: [] },
-]
-
 export default function AlertsPage() {
-    const [alerts, setAlerts] = useState<Alert[]>(DEMO_ALERTS)
+    const [alerts, setAlerts] = useState<Alert[]>([])
     const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null)
     const [filterSeverity, setFilterSeverity] = useState<string>('all')
     const [filterStatus, setFilterStatus] = useState<string>('all')
 
+    const fetchAlerts = async () => {
+        try {
+            const res = await api.get('/alerts')
+            setAlerts(res.data.alerts || [])
+        } catch { }
+    }
+
     useEffect(() => {
-        api.get('/alerts').then(res => {
-            if (res.data.alerts?.length) setAlerts(res.data.alerts)
-        }).catch(() => { })
+        fetchAlerts()
+        const interval = setInterval(fetchAlerts, 15000)
+        return () => clearInterval(interval)
     }, [])
 
     const filteredAlerts = alerts.filter(a => {
@@ -105,66 +103,76 @@ export default function AlertsPage() {
 
             {/* Alert Table */}
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Severity</th>
-                            <th>Attack Type</th>
-                            <th>Source IP</th>
-                            <th>Destination IP</th>
-                            <th>Confidence</th>
-                            <th>Time</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredAlerts.map((alert) => (
-                            <tr key={alert.id} style={{
-                                background: alert.severity === 'critical' && alert.status === 'open' ? 'rgba(239, 68, 68, 0.03)' : 'transparent',
-                            }}>
-                                <td><span className={`badge badge-${alert.severity}`}>{alert.severity}</span></td>
-                                <td style={{ fontWeight: 500 }}>{alert.attack_type}</td>
-                                <td className="mono" style={{ fontSize: 13, color: '#94A3B8' }}>{alert.src_ip}</td>
-                                <td className="mono" style={{ fontSize: 13, color: '#94A3B8' }}>{alert.dst_ip}</td>
-                                <td>
-                                    <span className="mono" style={{ fontSize: 13 }}>
-                                        {(alert.confidence * 100).toFixed(0)}%
-                                    </span>
-                                </td>
-                                <td style={{ fontSize: 12, color: '#64748B' }}>
-                                    <Clock size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
-                                    {timeAgo(alert.created_at)}
-                                </td>
-                                <td>
-                                    <span style={{
-                                        fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
-                                        color: alert.status === 'open' ? '#EF4444' : alert.status === 'acknowledged' ? '#EAB308' : '#22C55E',
-                                    }}>
-                                        {alert.status}
-                                    </span>
-                                </td>
-                                <td>
-                                    <div style={{ display: 'flex', gap: 6 }}>
-                                        <button onClick={() => setSelectedAlert(alert)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                            <Eye size={14} color="#06B6D4" />
-                                        </button>
-                                        {alert.status === 'open' && (
-                                            <button onClick={() => acknowledgeAlert(alert.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                <CheckCircle size={14} color="#EAB308" />
-                                            </button>
-                                        )}
-                                        {alert.status !== 'resolved' && (
-                                            <button onClick={() => resolveAlert(alert.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                                                <XCircle size={14} color="#22C55E" />
-                                            </button>
-                                        )}
-                                    </div>
-                                </td>
+                {filteredAlerts.length > 0 ? (
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>Attack Type</th>
+                                <th>Source IP</th>
+                                <th>Destination IP</th>
+                                <th>Confidence</th>
+                                <th>Time</th>
+                                <th>Status</th>
+                                <th>Actions</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {filteredAlerts.map((alert) => (
+                                <tr key={alert.id} style={{
+                                    background: alert.severity === 'critical' && alert.status === 'open' ? 'rgba(239, 68, 68, 0.03)' : 'transparent',
+                                }}>
+                                    <td><span className={`badge badge-${alert.severity}`}>{alert.severity}</span></td>
+                                    <td style={{ fontWeight: 500 }}>{alert.attack_type}</td>
+                                    <td className="mono" style={{ fontSize: 13, color: '#94A3B8' }}>{alert.src_ip}</td>
+                                    <td className="mono" style={{ fontSize: 13, color: '#94A3B8' }}>{alert.dst_ip}</td>
+                                    <td>
+                                        <span className="mono" style={{ fontSize: 13 }}>
+                                            {(alert.confidence * 100).toFixed(0)}%
+                                        </span>
+                                    </td>
+                                    <td style={{ fontSize: 12, color: '#64748B' }}>
+                                        <Clock size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
+                                        {timeAgo(alert.created_at)}
+                                    </td>
+                                    <td>
+                                        <span style={{
+                                            fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5,
+                                            color: alert.status === 'open' ? '#EF4444' : alert.status === 'acknowledged' ? '#EAB308' : '#22C55E',
+                                        }}>
+                                            {alert.status}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div style={{ display: 'flex', gap: 6 }}>
+                                            <button onClick={() => setSelectedAlert(alert)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                <Eye size={14} color="#06B6D4" />
+                                            </button>
+                                            {alert.status === 'open' && (
+                                                <button onClick={() => acknowledgeAlert(alert.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                    <CheckCircle size={14} color="#EAB308" />
+                                                </button>
+                                            )}
+                                            {alert.status !== 'resolved' && (
+                                                <button onClick={() => resolveAlert(alert.id)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                                    <XCircle size={14} color="#22C55E" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                ) : (
+                    <div style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: 48, color: '#64748B', fontSize: 14, gap: 8,
+                    }}>
+                        <AlertTriangle size={36} color="#334155" />
+                        <span>No alerts yet. Alerts will appear here when the live capture detects attacks.</span>
+                    </div>
+                )}
             </div>
 
             {/* Alert Detail Drawer */}

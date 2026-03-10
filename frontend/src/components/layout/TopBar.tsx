@@ -18,14 +18,16 @@ export default function TopBar() {
 
     useEffect(() => {
         // Check backend health periodically
+        const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+        const healthUrl = apiBase.replace('/api/v1', '') + '/health'
         const check = async () => {
             try {
-                const res = await fetch('/health')
+                const res = await fetch(healthUrl)
                 setConnected(res.ok)
             } catch { setConnected(false) }
         }
         check()
-        const interval = setInterval(check, 30000)
+        const interval = setInterval(check, 10000)
         return () => clearInterval(interval)
     }, [])
 

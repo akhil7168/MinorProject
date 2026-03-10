@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Activity, ShieldAlert, Cpu, Bell, TrendingUp, TrendingDown } from 'lucide-react'
+import { Activity, ShieldAlert, Cpu, Bell, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react'
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { formatNumber } from '../lib/utils'
+import { formatNumber, timeAgo } from '../lib/utils'
 import { ATTACK_COLORS } from '../lib/constants'
 import api from '../lib/api'
 
@@ -19,43 +19,91 @@ interface DashboardStats {
     model_ensemble_accuracy: number
 }
 
-// Demo data for timeline chart
-const DEMO_TIMELINE = Array.from({ length: 24 }, (_, i) => ({
-    hour: `${String(i).padStart(2, '0')}:00`,
-    total: Math.floor(Math.random() * 5000 + 2000),
-    attacks: Math.floor(Math.random() * 200 + 20),
-}))
+interface TimelinePoint {
+    hour: string
+    total_flows: number
+    attack_flows: number
+}
 
-const DEMO_ATTACKS = [
-    { name: 'DoS', value: 423, color: ATTACK_COLORS.DoS },
-    { name: 'Probe', value: 287, color: ATTACK_COLORS.Probe },
-    { name: 'R2L', value: 156, color: ATTACK_COLORS.R2L },
-    { name: 'Botnet', value: 89, color: ATTACK_COLORS.Botnet },
-    { name: 'WebAttack', value: 45, color: ATTACK_COLORS.WebAttack },
-]
+interface AttackDistItem {
+    type: string
+    count: number
+    color: string
+}
 
-const DEMO_ALERTS = [
-    { id: '1', severity: 'critical', type: 'DDoS Flood', src: '192.168.1.105', confidence: 0.97, time: '2m ago' },
-    { id: '2', severity: 'high', type: 'Port Scan', src: '10.0.0.42', confidence: 0.91, time: '5m ago' },
-    { id: '3', severity: 'medium', type: 'Brute Force', src: '172.16.0.88', confidence: 0.87, time: '12m ago' },
-    { id: '4', severity: 'high', type: 'DoS SYN', src: '192.168.2.15', confidence: 0.93, time: '18m ago' },
-    { id: '5', severity: 'low', type: 'Suspicious Scan', src: '10.0.1.100', confidence: 0.86, time: '25m ago' },
-]
+interface AlertItem {
+    id: string
+    severity: string
+    attack_type: string
+    source_ip: string
+    confidence: number
+    created_at: string
+}
+
+
+
 
 export default function DashboardPage() {
     const [stats, setStats] = useState<DashboardStats>({
-        total_flows_24h: 142832,
-        total_attacks_24h: 1243,
-        attack_rate_percent: 0.87,
-        active_models: 4,
-        open_alerts: 23,
-        critical_alerts: 3,
-        model_ensemble_accuracy: 0.9743,
+        total_flows_24h: 0,
+        total_attacks_24h: 0,
+        attack_rate_percent: 0,
+        active_models: 0,
+        open_alerts: 0,
+        critical_alerts: 0,
+        model_ensemble_accuracy: 0,
     })
+    const [timeline, setTimeline] = useState<TimelinePoint[]>([])
+    const [attacks, setAttacks] = useState<AttackDistItem[]>([])
+    const [alerts, setAlerts] = useState<AlertItem[]>([])
+    const [loading, setLoading] = useState(true)
+
+    const fetchAll = useCallback(async () => {
+        setLoading(true)
+        try {
+            const [statsRes, timelineRes, attacksRes, alertsRes] = await Promise.allSettled([
+                api.get('/dashboard/stats'),
+                api.get('/dashboard/timeline'),
+                api.get('/dashboard/attacks'),
+                api.get('/alerts', { params: { limit: 10 } }),
+            ])
+
+            if (statsRes.status === 'fulfilled') {
+                setStats(statsRes.value.data)
+            }
+
+            if (timelineRes.status === 'fulfilled') {
+                const tl = timelineRes.value.data
+                setTimeline(Array.isArray(tl) ? tl : [])
+            }
+
+            if (attacksRes.status === 'fulfilled') {
+                const dist = attacksRes.value.data?.distribution || []
+                setAttacks(dist.map((d: any) => ({
+                    ...d,
+                    name: d.type,
+                    value: d.count,
+                    color: ATTACK_COLORS[d.type] || ATTACK_COLORS.Unknown || '#6B7280',
+                })))
+            }
+
+            if (alertsRes.status === 'fulfilled') {
+                const alertList = alertsRes.value.data?.alerts || []
+                setAlerts(alertList.slice(0, 5))
+            }
+        } catch (err) {
+            console.error('Dashboard fetch error:', err)
+        } finally {
+            setLoading(false)
+        }
+    }, [])
 
     useEffect(() => {
-        api.get('/dashboard/stats').then(res => setStats(res.data)).catch(() => { })
-    }, [])
+        fetchAll()
+        // Refresh every 15 seconds for real-time feel
+        const interval = setInterval(fetchAll, 15000)
+        return () => clearInterval(interval)
+    }, [fetchAll])
 
     const statCards = [
         {
@@ -63,15 +111,15 @@ export default function DashboardPage() {
             value: formatNumber(stats.total_flows_24h),
             icon: Activity,
             color: '#06B6D4',
-            trend: '+12.3%',
-            trendUp: true,
+            trend: stats.total_flows_24h > 0 ? `${stats.attack_rate_percent}% attack rate` : 'No data yet',
+            trendUp: stats.total_flows_24h > 0,
         },
         {
             label: 'Attacks Detected',
             value: formatNumber(stats.total_attacks_24h),
             icon: ShieldAlert,
             color: '#EF4444',
-            trend: `${stats.attack_rate_percent}%`,
+            trend: stats.total_attacks_24h > 0 ? `${stats.attack_rate_percent}%` : 'No attacks',
             trendUp: false,
         },
         {
@@ -79,18 +127,24 @@ export default function DashboardPage() {
             value: stats.active_models.toString(),
             icon: Cpu,
             color: '#8B5CF6',
-            trend: `${(stats.model_ensemble_accuracy * 100).toFixed(1)}% acc`,
-            trendUp: true,
+            trend: stats.model_ensemble_accuracy > 0
+                ? `${(stats.model_ensemble_accuracy * 100).toFixed(1)}% acc`
+                : 'No models loaded',
+            trendUp: stats.active_models > 0,
         },
         {
             label: 'Open Alerts',
             value: stats.open_alerts.toString(),
             icon: Bell,
             color: '#F97316',
-            trend: `${stats.critical_alerts} critical`,
+            trend: stats.critical_alerts > 0 ? `${stats.critical_alerts} critical` : 'No critical alerts',
             trendUp: false,
         },
     ]
+
+    const hasTimeline = timeline.length > 0 && timeline.some(t => t.total_flows > 0 || t.attack_flows > 0)
+    const hasAttacks = attacks.length > 0
+    const hasAlerts = alerts.length > 0
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -115,7 +169,7 @@ export default function DashboardPage() {
                                 </div>
                                 <div style={{
                                     display: 'flex', alignItems: 'center', gap: 4, marginTop: 8,
-                                    fontSize: 12, color: card.trendUp ? '#22C55E' : '#EF4444',
+                                    fontSize: 12, color: card.trendUp ? '#22C55E' : '#94A3B8',
                                 }}>
                                     {card.trendUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                                     {card.trend}
@@ -146,28 +200,38 @@ export default function DashboardPage() {
                     <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#F1F5F9' }}>
                         Traffic Timeline (24h)
                     </h3>
-                    <ResponsiveContainer width="100%" height={280}>
-                        <AreaChart data={DEMO_TIMELINE}>
-                            <defs>
-                                <linearGradient id="totalGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#06B6D4" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#06B6D4" stopOpacity={0} />
-                                </linearGradient>
-                                <linearGradient id="attackGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
-                            <XAxis dataKey="hour" stroke="#64748B" fontSize={11} />
-                            <YAxis stroke="#64748B" fontSize={11} />
-                            <Tooltip
-                                contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#F1F5F9' }}
-                            />
-                            <Area type="monotone" dataKey="total" stroke="#06B6D4" fill="url(#totalGrad)" strokeWidth={2} name="Total Flows" />
-                            <Area type="monotone" dataKey="attacks" stroke="#EF4444" fill="url(#attackGrad)" strokeWidth={2} name="Attack Flows" />
-                        </AreaChart>
-                    </ResponsiveContainer>
+                    {hasTimeline ? (
+                        <ResponsiveContainer width="100%" height={280}>
+                            <AreaChart data={timeline}>
+                                <defs>
+                                    <linearGradient id="totalGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#06B6D4" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#06B6D4" stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="attackGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3} />
+                                        <stop offset="95%" stopColor="#EF4444" stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
+                                <XAxis dataKey="hour" stroke="#64748B" fontSize={11} />
+                                <YAxis stroke="#64748B" fontSize={11} />
+                                <Tooltip
+                                    contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#F1F5F9' }}
+                                />
+                                <Area type="monotone" dataKey="total_flows" stroke="#06B6D4" fill="url(#totalGrad)" strokeWidth={2} name="Total Flows" />
+                                <Area type="monotone" dataKey="attack_flows" stroke="#EF4444" fill="url(#attackGrad)" strokeWidth={2} name="Attack Flows" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            height: 280, color: '#64748B', fontSize: 14, flexDirection: 'column', gap: 8,
+                        }}>
+                            <Activity size={32} color="#334155" />
+                            <span>No traffic data yet. Live capture will populate this chart.</span>
+                        </div>
+                    )}
                 </motion.div>
 
                 {/* Attack Distribution */}
@@ -181,25 +245,36 @@ export default function DashboardPage() {
                     <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#F1F5F9' }}>
                         Attack Distribution
                     </h3>
-                    <ResponsiveContainer width="100%" height={280}>
-                        <PieChart>
-                            <Pie
-                                data={DEMO_ATTACKS}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={60}
-                                outerRadius={90}
-                                paddingAngle={3}
-                                dataKey="value"
-                            >
-                                {DEMO_ATTACKS.map((entry, idx) => (
-                                    <Cell key={idx} fill={entry.color} />
-                                ))}
-                            </Pie>
-                            <Tooltip contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#F1F5F9' }} />
-                            <Legend wrapperStyle={{ fontSize: 12, color: '#94A3B8' }} />
-                        </PieChart>
-                    </ResponsiveContainer>
+                    {hasAttacks ? (
+                        <ResponsiveContainer width="100%" height={280}>
+                            <PieChart>
+                                <Pie
+                                    data={attacks}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={60}
+                                    outerRadius={90}
+                                    paddingAngle={3}
+                                    dataKey="value"
+                                    nameKey="name"
+                                >
+                                    {attacks.map((entry, idx) => (
+                                        <Cell key={idx} fill={entry.color} />
+                                    ))}
+                                </Pie>
+                                <Tooltip contentStyle={{ background: '#1F2937', border: '1px solid #374151', borderRadius: 8, color: '#F1F5F9' }} />
+                                <Legend wrapperStyle={{ fontSize: 12, color: '#94A3B8' }} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            height: 280, color: '#64748B', fontSize: 14, flexDirection: 'column', gap: 8,
+                        }}>
+                            <ShieldAlert size={32} color="#334155" />
+                            <span>No attacks detected yet.</span>
+                        </div>
+                    )}
                 </motion.div>
             </div>
 
@@ -211,54 +286,78 @@ export default function DashboardPage() {
                 className="card"
                 style={{ padding: 20 }}
             >
-                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#F1F5F9' }}>
-                    Recent Alerts
-                </h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Severity</th>
-                            <th>Attack Type</th>
-                            <th>Source IP</th>
-                            <th>Confidence</th>
-                            <th>Time</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {DEMO_ALERTS.map((alert) => (
-                            <tr key={alert.id}>
-                                <td>
-                                    <span className={`badge badge-${alert.severity}`}>
-                                        {alert.severity}
-                                    </span>
-                                </td>
-                                <td style={{ fontWeight: 500 }}>{alert.type}</td>
-                                <td className="mono" style={{ color: '#94A3B8', fontSize: 13 }}>{alert.src}</td>
-                                <td>
-                                    <div style={{
-                                        display: 'flex', alignItems: 'center', gap: 8,
-                                    }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, color: '#F1F5F9' }}>
+                        Recent Alerts
+                    </h3>
+                    <button
+                        onClick={fetchAll}
+                        disabled={loading}
+                        style={{
+                            background: 'transparent', border: '1px solid #334155', borderRadius: 6,
+                            padding: '4px 10px', color: '#94A3B8', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: 4, fontSize: 12,
+                        }}
+                    >
+                        <RefreshCw size={12} className={loading ? 'spin' : ''} />
+                        Refresh
+                    </button>
+                </div>
+                {hasAlerts ? (
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>Attack Type</th>
+                                <th>Source IP</th>
+                                <th>Confidence</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {alerts.map((alert) => (
+                                <tr key={alert.id}>
+                                    <td>
+                                        <span className={`badge badge-${alert.severity}`}>
+                                            {alert.severity}
+                                        </span>
+                                    </td>
+                                    <td style={{ fontWeight: 500 }}>{alert.attack_type || '—'}</td>
+                                    <td className="mono" style={{ color: '#94A3B8', fontSize: 13 }}>{alert.source_ip || '—'}</td>
+                                    <td>
                                         <div style={{
-                                            width: 60, height: 6, borderRadius: 3,
-                                            background: '#1F2937',
+                                            display: 'flex', alignItems: 'center', gap: 8,
                                         }}>
                                             <div style={{
-                                                width: `${alert.confidence * 100}%`,
-                                                height: '100%',
-                                                borderRadius: 3,
-                                                background: alert.confidence > 0.95 ? '#EF4444' : alert.confidence > 0.9 ? '#F97316' : '#06B6D4',
-                                            }} />
+                                                width: 60, height: 6, borderRadius: 3,
+                                                background: '#1F2937',
+                                            }}>
+                                                <div style={{
+                                                    width: `${(alert.confidence || 0) * 100}%`,
+                                                    height: '100%',
+                                                    borderRadius: 3,
+                                                    background: (alert.confidence || 0) > 0.95 ? '#EF4444' : (alert.confidence || 0) > 0.9 ? '#F97316' : '#06B6D4',
+                                                }} />
+                                            </div>
+                                            <span style={{ fontSize: 13, color: '#94A3B8' }}>
+                                                {((alert.confidence || 0) * 100).toFixed(0)}%
+                                            </span>
                                         </div>
-                                        <span style={{ fontSize: 13, color: '#94A3B8' }}>
-                                            {(alert.confidence * 100).toFixed(0)}%
-                                        </span>
-                                    </div>
-                                </td>
-                                <td style={{ fontSize: 13, color: '#64748B' }}>{alert.time}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                                    </td>
+                                    <td style={{ fontSize: 13, color: '#64748B' }}>{timeAgo(alert.created_at)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                ) : (
+                    <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        padding: 40, color: '#64748B', fontSize: 14, flexDirection: 'column', gap: 8,
+                    }}>
+                        <Bell size={32} color="#334155" />
+                        <span>No alerts yet. Alerts will appear here when attacks are detected from live traffic.</span>
+                    </div>
+                )}
             </motion.div>
         </div>
     )

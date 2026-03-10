@@ -10,20 +10,12 @@ interface Model {
     size_mb: number; created_at: string; model_path: string;
 }
 
-const DEMO_MODELS: Model[] = [
-    { id: '1', name: 'cnn_v1', model_type: 'cnn', is_active: true, accuracy: 0.9721, f1_macro: 0.9543, detection_rate: 0.9812, false_alarm_rate: 0.0087, size_mb: 2.3, created_at: '2025-02-20T10:30:00Z', model_path: 'models_saved/cnn_model.h5' },
-    { id: '2', name: 'lstm_v1', model_type: 'lstm', is_active: true, accuracy: 0.9654, f1_macro: 0.9387, detection_rate: 0.9756, false_alarm_rate: 0.0123, size_mb: 3.1, created_at: '2025-02-21T14:00:00Z', model_path: 'models_saved/lstm_model.h5' },
-    { id: '3', name: 'autoencoder_v1', model_type: 'autoencoder', is_active: false, accuracy: 0.9412, f1_macro: 0.9201, detection_rate: 0.9543, false_alarm_rate: 0.0234, size_mb: 0.8, created_at: '2025-02-22T09:00:00Z', model_path: 'models_saved/autoencoder_model.h5' },
-    { id: '4', name: 'transformer_v1', model_type: 'transformer', is_active: true, accuracy: 0.9687, f1_macro: 0.9456, detection_rate: 0.9789, false_alarm_rate: 0.0098, size_mb: 1.5, created_at: '2025-02-23T16:30:00Z', model_path: 'models_saved/transformer_model.h5' },
-    { id: '5', name: 'hybrid_v1', model_type: 'hybrid', is_active: true, accuracy: 0.9798, f1_macro: 0.9634, detection_rate: 0.9867, false_alarm_rate: 0.0065, size_mb: 4.2, created_at: '2025-02-24T11:00:00Z', model_path: 'models_saved/hybrid_model.h5' },
-]
-
 export default function ModelsPage() {
-    const [models, setModels] = useState<Model[]>(DEMO_MODELS)
+    const [models, setModels] = useState<Model[]>([])
 
     useEffect(() => {
         api.get('/models').then(res => {
-            if (res.data.models?.length) setModels(res.data.models)
+            setModels(res.data.models || [])
         }).catch(() => { })
     }, [])
 
@@ -53,7 +45,7 @@ export default function ModelsPage() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380, 1fr))', gap: 16 }}>
-                {models.map((model, i) => {
+                {models.length > 0 ? models.map((model, i) => {
                     const info = getModelInfo(model.model_type)
                     return (
                         <motion.div
@@ -118,7 +110,15 @@ export default function ModelsPage() {
                             </div>
                         </motion.div>
                     )
-                })}
+                }) : (
+                    <div style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        padding: 48, color: '#64748B', fontSize: 14, gap: 8, gridColumn: '1 / -1',
+                    }}>
+                        <Boxes size={36} color="#334155" />
+                        <span>No models registered yet. Train a model first to see it here.</span>
+                    </div>
+                )}
             </div>
         </div>
     )
